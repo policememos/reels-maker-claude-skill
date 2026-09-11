@@ -1,0 +1,15 @@
+{
+  "name": "claude-skills",
+  "description": "Katerina's personal Claude Code skills",
+  "owner": {
+    "name": "Katerina Sabetova"
+  },
+  "plugins": [
+    {
+      "name": "reels-maker",
+      "description": "Crops and creates a short Instagram Reel (max 6 seconds) from a source folder using CloudGlue analysis and Hyperframes rendering.",
+      "source": "./plugins/reels-maker",
+      "category": "video"
+    }
+  ]
+}

@@ -1,0 +1,7 @@
+{
+  "name": "reels-maker",
+  "description": "Crops and creates a short Instagram Reel (max 6 seconds) from a source folder using CloudGlue analysis and Hyperframes rendering.",
+  "author": {
+    "name": "Katerina Sabetova"
+  }
+}
