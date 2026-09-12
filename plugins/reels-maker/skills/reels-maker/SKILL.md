@@ -287,8 +287,13 @@ All work runs on device via `device_bash`.
 
 Hyperframes compositions are **ordinary HTML** where:
 - HTML + CSS control appearance
-- `data-start` and `data-duration` on elements control timing in **frames** (at project fps)
-- `data-fps` and `data-duration` on `<body>` define the project timeline
+- The file **must be named `index.html`** — the CLI looks for that exact name and fails with "No composition found" otherwise
+- The composition root is a real `<div>` (not `<body>`) carrying `data-composition-id`, `data-width`, `data-height`, and `data-duration` — all four are required, or render fails with `HF_DE_COMPOSITION_ROOT_MISSING`
+- `data-start` and `data-duration` on every element are in **seconds**, not frames — use the clip durations from Step 5 directly, no frame math
+- A paused GSAP timeline must be built and registered on `window.__timelines["<composition-id>"]` (load GSAP from the jsdelivr CDN); entrance animations (hook fade/scale-in, underline wipe) go on this timeline as tweens, not as CSS `@keyframes`
+- Never set a CSS initial `transform` on an element that GSAP also tweens on `transform` — `lint` rejects the conflict (`gsap_css_transform_conflict`). Let `gsap.fromTo(...)` set the start state instead.
+- No `<br>` in body text — let it wrap naturally inside a constrained width instead
+- Only **direct children of the root** get automatic full-frame positioning. Custom-positioned elements (like the hook text and its underline) must be nested one level down inside a full-bleed wrapper clip, so your own CSS `top`/`left` values apply instead of being overridden
 
 **6a — Determine output filename and create project folder:**
 
@@ -301,108 +306,101 @@ mkdir -p "$PROJ/hf_reel"
 cp /tmp/clip_final.mp4 "$PROJ/hf_reel/clip.mp4"
 ```
 
-**6b — Calculate frame counts** (30fps):
+**6b — Duration is in seconds:**
+
+Use the clip's total duration and the underline's reveal delay directly in seconds — no frame conversion needed.
 
 ```
-total_frames = clip_duration_seconds × 30
-e.g. 6.0s × 30 = 180 frames
-underline delay ≈ 0.4s × 30 = 12 frames
+total_duration_seconds = clip_duration_seconds   # e.g. 6.0
+underline_delay_seconds ≈ 0.4
 ```
 
-**6c — Write `$PROJ/hf_reel/composition.html`:**
+**6c — Write `$PROJ/hf_reel/index.html`:**
 
-Replace `ТЕКСТ ХУКА`, colors, and frame counts with actual values from Steps 4–5:
+Replace `ТЕКСТ ХУКА`, colors, and the duration values with actual values from Steps 4–5. Start the hook font size around 60–70px for two lines of Cyrillic caps at 1080px width — check the rendered frame and shrink it if any word clips the edge (see 6d).
 
 ```html
-<!DOCTYPE html>
-<html>
-<head>
-  <meta charset="utf-8">
-  <style>
-    * { margin: 0; padding: 0; box-sizing: border-box; }
-    body { width: 1080px; height: 1920px; overflow: hidden; background: #000; }
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=1080, height=1920" />
+    <title>Reel</title>
+    <script src="https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js"></script>
+    <style>
+      body { margin: 0; background: #000; font-family: 'Arial Black', Arial, Helvetica, sans-serif; }
 
-    .scene { position: relative; width: 100%; height: 100%; }
+      #root {
+        position: relative;
+        width: 1080px;
+        height: 1920px;
+        overflow: hidden;
+      }
 
-    video {
-      position: absolute;
-      width: 100%; height: 100%;
-      object-fit: cover;
-    }
+      video { object-fit: cover; }
 
-    .hook {
-      position: absolute;
-      top: 11%;
-      width: 100%;
-      text-align: center;
-      font-family: 'Arial Black', Arial, Helvetica, sans-serif;
-      font-size: 96px;
-      font-weight: 900;
-      color: #FFFFFF;                    /* ← primary from Step 5 */
-      -webkit-text-stroke: 4px #D4893A; /* ← accent from Step 5 */
-      text-transform: uppercase;
-      letter-spacing: 3px;
-      line-height: 1.1;
-      padding: 0 56px;
-      animation: hookIn 0.5s ease forwards;
-    }
+      .textLayer { position: absolute; inset: 0; }
 
-    .underline {
-      position: absolute;
-      top: calc(11% + 120px);
-      left: calc(50% - 100px);
-      width: 200px;
-      height: 5px;
-      border-radius: 3px;
-      background: #D4893A;              /* ← accent from Step 5 */
-      transform-origin: left center;
-      animation: wipeIn 0.4s ease forwards;
-    }
+      .hook {
+        position: absolute;
+        top: 11%;
+        left: 0; right: 0;
+        width: 100%;
+        text-align: center;
+        font-size: 68px;                   /* ← tune to fit two lines at 1080px width */
+        font-weight: 900;
+        color: #FFFFFF;                     /* ← primary from Step 5 */
+        -webkit-text-stroke: 3px #D4893A;  /* ← accent from Step 5 */
+        text-transform: uppercase;
+        letter-spacing: 1px;
+        line-height: 1.2;
+        padding: 0 70px;
+        opacity: 0;                         /* GSAP sets the visible state below */
+      }
 
-    @keyframes hookIn {
-      from { opacity: 0; transform: scale(0.85); }
-      to   { opacity: 1; transform: scale(1); }
-    }
+      .underline {
+        position: absolute;
+        top: calc(11% + 190px);
+        left: calc(50% - 100px);
+        width: 200px;
+        height: 5px;
+        border-radius: 3px;
+        background: #D4893A;                /* ← accent from Step 5 */
+        transform-origin: left center;
+      }
+    </style>
+  </head>
+  <body>
+    <div
+      id="root"
+      data-composition-id="reel"
+      data-width="1080"
+      data-height="1920"
+      data-duration="6"
+      data-fps="30"
+    >
+      <video id="bgvideo" src="clip.mp4" data-start="0" data-duration="6" muted playsinline></video>
 
-    @keyframes wipeIn {
-      from { transform: scaleX(0); }
-      to   { transform: scaleX(1); }
-    }
-  </style>
-</head>
-<!-- data-duration in frames: clip_seconds × 30 -->
-<body data-fps="30" data-duration="180">
-  <div class="scene">
-
-    <video
-      src="clip.mp4"
-      data-start="0"
-      data-duration="180"
-      muted playsinline>
-    </video>
-
-    <!-- Hook text: appears at frame 0 -->
-    <div class="hook"
-         data-start="0"
-         data-duration="180">
-      ТЕКСТ ХУКА
+      <div class="textLayer clip" data-start="0" data-duration="6">
+        <div id="hookText" class="hook">ТЕКСТ ХУКА</div>
+        <div id="underline" class="underline"></div>
+      </div>
     </div>
-
-    <!-- Underline: appears at frame 12 (≈0.4s) -->
-    <div class="underline"
-         data-start="12"
-         data-duration="168">
-    </div>
-
-  </div>
-</body>
+    <script>
+      const tl = gsap.timeline({ paused: true });
+      tl.fromTo("#hookText", { opacity: 0, scale: 0.85 }, { opacity: 1, scale: 1, duration: 0.5, ease: "power2.out" }, 0);
+      tl.fromTo("#underline", { scaleX: 0 }, { scaleX: 1, duration: 0.4, ease: "power2.out" }, 0.4);
+      window.__timelines["reel"] = tl;
+    </script>
+  </body>
 </html>
 ```
 
-**6d — Render directly into the project folder:**
+**6d — Lint, render, and eyeball the result:**
 
 ```bash
 cd "$PROJ/hf_reel"
+npx hyperframes lint            # 0 errors before you burn time rendering
 npx hyperframes render --output "$OUT" 2>&1 | tail -15
 ```
 
@@ -414,10 +412,17 @@ ffprobe -v quiet -show_entries format=duration -of csv=p=0 "$OUT"
 echo "Saved: $OUT"
 ```
 
+**Always pull a preview frame and look at it** — text that fits your mental model of the width often clips in practice:
+```bash
+ffmpeg -ss 1 -i "$OUT" -vframes 1 /tmp/preview.jpg -y 2>/dev/null
+```
+Read the frame back and check the hook isn't cut off at the frame edge. If it is, lower `.hook`'s `font-size` (and/or widen `padding`) and re-render — do not shorten the hook text to force a fit unless the wording itself needs work.
+
 **If render fails — common fixes:**
-- `data-duration` must be in frames, not seconds — recalculate
+- `HF_DE_COMPOSITION_ROOT_MISSING`: the root `<div>` is missing one of `data-composition-id` / `data-width` / `data-height` / `data-duration`, or timing was authored in frames instead of seconds — fix the root attributes, not the CLI invocation
+- File must be named `index.html`, not `composition.html` — the CLI only looks for `index.html`
 - Video `src` must be relative to the composition file (just `clip.mp4`, not absolute)
-- Missing `data-fps` on `<body>` — add it
+- `gsap_css_transform_conflict` from `lint`: remove the CSS `transform` and let the GSAP `fromTo` set the initial state
 - CLI not found: try `npx hyperframes@latest render` instead
 - Remove `| tail -15` temporarily to see the full error
 
